@@ -1,0 +1,16 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "biomech-features"
+version = "0.1.0"
+description = "Simple, fast IMU+EMG feature extraction"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Malik Qirtas", email = "mqirtas@ucc.ie" }]
+requires-python = ">=3.9"
+dependencies = ["numpy", "scipy", "pandas"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/biomechfe"]
