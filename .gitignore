@@ -1,7 +1,9 @@
 # Python
 __pycache__/
+src/Dataset/
 *.pyc
 *.pyo
+*.csv
 *.pyd
 *.egg-info/
 .venv/

@@ -1,66 +1,134 @@
+# src/biomechfe/features_basic.py
 import numpy as np
 from scipy.signal import welch
+from .Featureset.IMU_acc_3axis_features import compute_acc_features_for_window
+from .Featureset.IMU_acc_jerk_features import compute_jerk_features_for_window
+from .Featureset.IMU_gyr_3axis_features import compute_gyr_features_for_window
+from .Featureset.IMU_gyr_rom_features import compute_gyr_rom_features_for_window
+from .Featureset.IMU_movement_frequency_features import compute_movement_frequency_features_for_window
+from .Featureset.IMU_MPSD_features import compute_mpsd_features_for_window
+from .Featureset.IMU_RT_variability_features import compute_rt_variability_features_for_window
+from .Featureset.EMG_integrated_features import compute_emg_integrated_features_for_window
+from .Featureset.EMG_MAV_features import compute_emg_mav_features_for_window
+from .Featureset.EMG_statistical_features import compute_emg_statistical_features_for_window
+from .Featureset.EMG_STFT_features import compute_emg_stft_features_for_window
+from .Featureset.EMG_wavelength_features import compute_emg_wavelength_features_for_window
+from .Featureset.EMG_ZC_features import compute_emg_zc_features_for_window
 
-def _rms(x):
-    return float(np.sqrt(np.mean(x**2))) if x.size else np.nan
+def compute_features_basic(window, fs_emg=None, fs_imu=None, imu_site=None, muscle_names=None, extended_acc=False, include_jerk=True):
+    """
+    Compute basic features from a window of EMG and/or IMU data.
 
-def _waveform_length(x):
-    return float(np.sum(np.abs(np.diff(x))))
+    Parameters:
+    -----------
+    window : dict
+        Window containing 'emg' and/or 'acc'/'gyr' data
+    fs_emg : float, optional
+        EMG sampling frequency
+    fs_imu : float, optional
+        IMU sampling frequency
+    imu_site : str, optional
+        IMU sensor site name (e.g., 'Shoulder', 'Wrist') for feature naming
+    extended_acc : bool, default False
+        Whether to use extended accelerometer features (more comprehensive)
+    include_jerk : bool, default True
+        Whether to include jerk features from accelerometer data
 
-def _zero_crossings(x):
-    return int(np.sum(np.diff(np.signbit(x)) != 0))
-
-def _mean_freq_and_med_freq(x, fs):
-    # Welch PSD; return mean freq (MNF) and median freq (MDF)
-    f, Pxx = welch(x, fs=fs, nperseg=min(1024, x.size))
-    if np.all(Pxx == 0):
-        return np.nan, np.nan
-    mnf = float(np.sum(f * Pxx) / np.sum(Pxx))
-    cumsum = np.cumsum(Pxx)
-    mdf = float(np.interp(0.5 * cumsum[-1], cumsum, f))
-    return mnf, mdf
-
-def _sma(acc):  # simple magnitude area of acc
-    return float(np.mean(np.abs(acc), axis=1).sum())
-
-def _jerk_mean(acc, fs):
-    # jerk magnitude mean
-    dif = np.diff(acc, axis=1) * fs
-    mag = np.sqrt(np.sum(dif**2, axis=0))
-    return float(np.mean(mag))
-
-def compute_features_basic(window, fs_emg=None, fs_imu=None):
+    Returns:
+    --------
+    dict
+        Dictionary of computed features
+    """
     feats = {}
 
     # --- EMG (per-channel and simple aggregates) ---
-    if "emg" in window:
-        emg = window["emg"]  # (ch, n)
-        ch_vals_rms, ch_vals_wl, ch_vals_zc = [], [], []
-        mnfs, mdfs = [], []
-        for i, ch in enumerate(emg):
-            ch_vals_rms.append(_rms(ch))
-            ch_vals_wl.append(_waveform_length(ch))
-            ch_vals_zc.append(_zero_crossings(ch))
-            if fs_emg:
-                mnf, mdf = _mean_freq_and_med_freq(ch, fs_emg)
-                mnfs.append(mnf); mdfs.append(mdf)
+    if "emg" in window and window["emg"] is not None:
+        emg_integrated_features = compute_emg_integrated_features_for_window(
+            window, fs_emg, muscle_names=muscle_names
+        )
+        feats.update(emg_integrated_features)
 
-            feats[f"emg_rms_ch{i}"] = ch_vals_rms[-1]
-            feats[f"emg_wl_ch{i}"]  = ch_vals_wl[-1]
-            feats[f"emg_zc_ch{i}"]  = ch_vals_zc[-1]
+        emg_MAV_features = compute_emg_mav_features_for_window(
+            window, fs_emg, muscle_names=muscle_names
+        )
+        feats.update(emg_MAV_features)
 
-        feats["emg_rms_mean"] = float(np.mean(ch_vals_rms))
-        feats["emg_wl_mean"]  = float(np.mean(ch_vals_wl))
-        feats["emg_zc_mean"]  = float(np.mean(ch_vals_zc))
-        if mnfs and mdfs:
-            feats["emg_mnf_mean"] = float(np.mean(mnfs))
-            feats["emg_mdf_mean"] = float(np.mean(mdfs))
+        emg_statistical_features = compute_emg_statistical_features_for_window(
+            window, fs_emg, muscle_names=muscle_names
+        )
+        feats.update(emg_statistical_features)
 
-    # --- IMU Acc ---
-    if "acc" in window:
-        acc = window["acc"]  # (3, n)
-        feats["imu_sma"] = _sma(acc)
-        if fs_imu:
-            feats["imu_jerk_mean"] = _jerk_mean(acc, fs_imu)
+        emg_STFT_features = compute_emg_stft_features_for_window(
+            window, fs_emg, muscle_names=muscle_names
+        )
+        feats.update(emg_STFT_features)
+
+        emg_wavelength_features = compute_emg_wavelength_features_for_window(
+            window, fs_emg, muscle_names=muscle_names
+        )
+        feats.update(emg_wavelength_features)
+
+        emg_zc_features = compute_emg_zc_features_for_window(
+            window, fs_emg, muscle_names=muscle_names
+        )
+        feats.update(emg_zc_features)
+
+    # --- IMU Accelerometer (comprehensive 3-axis features) ---
+    if "acc" in window and window["acc"] is not None and fs_imu:
+        # Use the comprehensive 3-axis accelerometer features
+        acc_features = compute_acc_features_for_window(
+            window, fs_imu, site_name=imu_site, extended=extended_acc
+        )
+        feats.update(acc_features)
+
+        jerk_features = compute_jerk_features_for_window(
+            window, fs_imu, site_name=imu_site
+        )
+        feats.update(jerk_features)
+
+        movement_freq_acc_features = compute_movement_frequency_features_for_window(
+            window, fs_imu, site_name=imu_site
+        )
+        feats.update(movement_freq_acc_features)
+
+        mpsd_acc_features = compute_mpsd_features_for_window(
+            window, fs_imu, site_name=imu_site
+        )
+        feats.update(mpsd_acc_features)
+
+        acc_rt_variability_features = compute_rt_variability_features_for_window(
+            window, fs_imu, site_name=imu_site
+        )
+        feats.update(acc_rt_variability_features)
+
+    # --- IMU Gyroscope (basic features - you can extend this similarly) ---
+    if "gyr" in window and window["gyr"] is not None:
+        gyr = window["gyr"]  # (3, n)
+        # Add basic gyroscope features here
+        # You could create a similar comprehensive gyroscope feature module
+        gyr_3axisfeatures = compute_gyr_features_for_window(
+            window, fs_imu, site_name=imu_site
+        )
+        feats.update(gyr_3axisfeatures)
+
+        gyr_romfeatures = compute_gyr_rom_features_for_window(
+            window, fs_imu, site_name=imu_site
+        )
+        feats.update(gyr_romfeatures)
+
+        movement_freq_gyr_features = compute_movement_frequency_features_for_window(
+            window, fs_imu, site_name=imu_site
+        )
+        feats.update(movement_freq_gyr_features)
+
+        mpsd_gyr_features = compute_mpsd_features_for_window(
+            window, fs_imu, site_name=imu_site
+        )
+        feats.update(mpsd_gyr_features)
+
+        gyr_rt_variability_features = compute_rt_variability_features_for_window(
+            window, fs_imu, site_name=imu_site
+        )
+        feats.update(gyr_rt_variability_features)
 
     return feats
