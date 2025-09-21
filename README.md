@@ -24,7 +24,7 @@ A Python library for extracting biomechanical features from IMU (Inertial Measur
 
 ### Install from source
 ```bash
-git clone <repository-url>
+git clone <https://github.com/Qirtas/BiomechanicalFeatures.git>
 cd biomech-features
 pip install -e .
 ```
@@ -191,7 +191,70 @@ segmentation = {
 
 ## Data Format
 
-### Input Data Structure
+### Expected File Structure
+
+The library expects a hierarchical folder structure for automatic data loading:
+
+```
+<root>/
+├── <movement>/
+│   ├── emg_<muscle_name>/
+│   │   └── *Subject_<id>*.csv
+│   ├── <imu_site>/
+│   │   ├── acc/
+│   │   │   └── Subject_<id>_<site>_acc.csv
+│   │   └── gyr/
+│   │       └── Subject_<id>_<site>_gyr.csv
+```
+
+**Example:**
+```
+Dataset/
+├── processed_data_35_i/
+│   ├── emg_deltoideus_anterior/
+│   │   └── Subject_1_deltoideus_anterior.csv
+│   ├── emg_deltoideus_posterior/
+│   │   └── Subject_1_deltoideus_posterior.csv
+│   ├── Shoulder/
+│   │   ├── acc/
+│   │   │   └── Subject_1_Shoulder_acc.csv
+│   │   └── gyr/
+│   │       └── Subject_1_Shoulder_gyr.csv
+```
+
+### CSV File Format Requirements
+
+#### EMG Files
+EMG CSV files should contain a single column with the signal data:
+- **Preferred column names**: `"EMG"`, `"emg"`, `"Signal"`, `"signal"`, `"value"`, `"amplitude"`
+- **Fallback**: First numeric column will be used
+- **Data type**: Numeric values (float)
+
+```csv
+EMG
+0.1234
+0.1456
+0.1123
+...
+```
+
+#### IMU Files
+IMU CSV files should contain 3-axis data (X, Y, Z):
+- **Preferred column names**: 
+  - Accelerometer: `"Acc_X"`, `"Acc_Y"`, `"Acc_Z"`
+  - Gyroscope: `"Gyr_X"`, `"Gyr_Y"`, `"Gyr_Z"`
+- **Fallback options**: `"X"`, `"Y"`, `"Z"` or `"x"`, `"y"`, `"z"`
+- **Data type**: Numeric values (float)
+
+```csv
+Acc_X,Acc_Y,Acc_Z
+9.81,0.12,-0.34
+9.85,0.15,-0.31
+9.79,0.09,-0.37
+...
+```
+
+### Input Data Structure (In-Memory)
 
 ```python
 # EMG data: (n_channels, n_samples)
@@ -208,6 +271,167 @@ data = {
     "emg": emg_data,
     "imu": imu_data
 }
+```
+
+### Adapting Your Data Format
+
+If your data doesn't match the expected format, here are common adaptation strategies:
+
+#### 1. Different File Structure
+
+```python
+import pandas as pd
+import numpy as np
+from biomechfe import extract_features
+
+# Load your custom format
+def load_custom_format(file_path):
+    df = pd.read_csv(file_path)
+    
+    # Example: Convert single file with multiple EMG channels
+    emg_columns = ["muscle1", "muscle2", "muscle3"]
+    emg_data = df[emg_columns].values.T  # Transpose to (channels, samples)
+    
+    # Example: Convert IMU data with different column names
+    imu_data = {
+        "acc": df[["accel_x", "accel_y", "accel_z"]].values.T,
+        "gyr": df[["gyro_x", "gyro_y", "gyro_z"]].values.T
+    }
+    
+    return {"emg": emg_data, "imu": imu_data}
+
+# Use with feature extraction
+data = load_custom_format("your_file.csv")
+df = extract_features(data, fs_emg=1000, fs_imu=100)
+```
+
+#### 2. Different Column Names
+
+```python
+def adapt_column_names(df, format_type="emg"):
+    """Adapt your column names to library expectations"""
+    
+    if format_type == "emg":
+        # Map your column names to expected ones
+        column_mapping = {
+            "signal_amplitude": "EMG",
+            "muscle_activity": "EMG"
+        }
+        df = df.rename(columns=column_mapping)
+    
+    elif format_type == "imu_acc":
+        column_mapping = {
+            "acceleration_x": "Acc_X",
+            "acceleration_y": "Acc_Y", 
+            "acceleration_z": "Acc_Z"
+        }
+        df = df.rename(columns=column_mapping)
+    
+    elif format_type == "imu_gyr":
+        column_mapping = {
+            "angular_vel_x": "Gyr_X",
+            "angular_vel_y": "Gyr_Y",
+            "angular_vel_z": "Gyr_Z"
+        }
+        df = df.rename(columns=column_mapping)
+    
+    return df
+```
+
+#### 3. Single File with Multiple Modalities
+
+```python
+def split_multimodal_file(file_path):
+    """Split a single file containing both EMG and IMU data"""
+    df = pd.read_csv(file_path)
+    
+    # Extract EMG channels
+    emg_cols = [col for col in df.columns if 'emg' in col.lower()]
+    emg_data = df[emg_cols].values.T
+    
+    # Extract IMU channels
+    acc_cols = [col for col in df.columns if 'acc' in col.lower()]
+    gyr_cols = [col for col in df.columns if 'gyr' in col.lower()]
+    
+    imu_data = {
+        "acc": df[acc_cols].values.T,
+        "gyr": df[gyr_cols].values.T
+    }
+    
+    return {
+        "emg": emg_data,
+        "imu": imu_data
+    }
+```
+
+#### 4. Different Sampling Rates
+
+```python
+from scipy import signal
+
+def resample_data(data, original_fs, target_fs):
+    """Resample data to match expected sampling rate"""
+    if original_fs == target_fs:
+        return data
+    
+    # Calculate resampling ratio
+    num_samples = int(data.shape[-1] * target_fs / original_fs)
+    
+    if data.ndim == 1:
+        return signal.resample(data, num_samples)
+    else:
+        # For multi-channel data
+        resampled = np.zeros((data.shape[0], num_samples))
+        for i in range(data.shape[0]):
+            resampled[i] = signal.resample(data[i], num_samples)
+        return resampled
+
+# Example usage
+emg_resampled = resample_data(emg_data, original_fs=2000, target_fs=1000)
+```
+
+#### 5. Custom Data Loader Function
+
+```python
+def create_custom_loader(base_path, subject_id, trial_name):
+    """
+    Create a custom loader for your specific data format
+    Returns data in library-compatible format
+    """
+    
+    # Load EMG data (example: single file with multiple muscles)
+    emg_file = f"{base_path}/{trial_name}/emg_data_subject_{subject_id}.csv"
+    emg_df = pd.read_csv(emg_file)
+    
+    # Assuming columns: timestamp, muscle1, muscle2, muscle3
+    emg_data = emg_df[["muscle1", "muscle2", "muscle3"]].values.T
+    
+    # Load IMU data (example: separate files for acc and gyr)
+    acc_file = f"{base_path}/{trial_name}/accelerometer_subject_{subject_id}.csv"
+    gyr_file = f"{base_path}/{trial_name}/gyroscope_subject_{subject_id}.csv"
+    
+    acc_df = pd.read_csv(acc_file)
+    gyr_df = pd.read_csv(gyr_file)
+    
+    imu_data = {
+        "acc": acc_df[["x", "y", "z"]].values.T,
+        "gyr": gyr_df[["x", "y", "z"]].values.T
+    }
+    
+    return {
+        "emg": emg_data,
+        "imu": imu_data,
+        "fs": {"emg": 1000, "imu": 100},
+        "meta": {
+            "subject": subject_id,
+            "trial": trial_name,
+            "emg_channels": ["muscle1", "muscle2", "muscle3"]
+        }
+    }
+
+# Usage
+data = create_custom_loader("path/to/data", subject_id=1, trial_name="trial1")
+df = extract_features(data, fs_emg=data["fs"]["emg"], fs_imu=data["fs"]["imu"])
 ```
 
 ### Output DataFrame
@@ -295,44 +519,20 @@ final_df = pd.concat(results, ignore_index=True)
 
 ---
 
-## Contributing
-
-Contributions are welcome! Please feel free to submit issues, feature requests, or pull requests.
-
 ### Development Setup
 
 ```bash
-git clone <repository-url>
+git clone <https://github.com/Qirtas/BiomechanicalFeatures.git>
 cd biomech-features
 pip install -e ".[dev]"
 ```
 
-### Running Tests
-
-```bash
-pytest tests/
-```
-
----
-
-## License
-
-This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
 
 ---
 
 ## Citation
 
 If you use this library in your research, please cite:
-
-```bibtex
-@software{biomech_features,
-  title={biomech-features: Feature extraction for IMU and EMG signals},
-  author={Malik Qirtas},
-  year={2024},
-  url={https://github.com/your-username/biomech-features}
-}
-```
 
 ---
 
