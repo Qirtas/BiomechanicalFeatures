@@ -4,6 +4,7 @@ src/Dataset/
 *.pyc
 *.pyo
 *.csv
+*.toml
 *.pyd
 *.egg-info/
 .venv/

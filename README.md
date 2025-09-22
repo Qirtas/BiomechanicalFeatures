@@ -29,9 +29,11 @@ cd biomech-features
 pip install -e .
 ```
 
-### Install from PyPI (coming soon)
+### Install from Test PyPI
+The package is currently available on Test PyPI for team review and testing:
+
 ```bash
-pip install biomech-features
+pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ biomech-features```
 ```
 
 ---
