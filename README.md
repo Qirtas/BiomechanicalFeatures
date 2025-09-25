@@ -79,7 +79,7 @@ df = extract_features(
     segmentation={
         "mode": "reps",
         "rep_mode": "zero_between_valley_peak",
-        "axis": None,  # auto-select gyroscope axis
+        "axis": "x",
         "min_prominence": 0.25,
         "min_distance_s": 0.8,
         "smooth_s": 0.20,
@@ -182,7 +182,7 @@ extract_features(data, window_s=2.0, step_s=1.0)
 segmentation = {
     "mode": "reps",
     "rep_mode": "zero_between_valley_peak",  # or "zero_between_peak_valley"
-    "axis": None,  # auto-select or specify 0/1/2
+    "axis": "x",
     "min_prominence": 0.25,
     "min_distance_s": 0.8,
     "smooth_s": 0.20,
